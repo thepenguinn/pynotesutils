@@ -22,10 +22,10 @@ class ViewConnection():
 class ViewServer(ViewConnection):
 
     command: str | None = None
-    server: socket.socket | None = None
+    server: socket.socket
 
     thread_list: List[threading.Thread] = []
-    view_lock: threading.Lock | None = None
+    view_lock: threading.Lock
 
     def __init__ (self, port: int | None = None, command: str | None = None, backlog: int = 4) -> None:
 
@@ -44,7 +44,8 @@ class ViewServer(ViewConnection):
 
     def thread_handler (self, client: socket.socket) -> None:
 
-        pass
+        print(client)
+        print("Leaving")
 
         return
 
@@ -53,16 +54,44 @@ class ViewServer(ViewConnection):
         connected_client: socket.socket
         thread: threading.Thread
 
-        # TODO: this will spawn as many threads as many connections there are
-        # limit the number of threads, maybe to 20
+        # TODO: Limit the number of threads, maybe to 20
         while True:
             # this will block
-            connected_client, _ = server.accept()
+            print("Waiting for the client to connect")
+            connected_client, _ = self.server.accept()
+            print("client got connected")
 
             thread = threading.Thread(target = self.thread_handler, args = [connected_client])
+            print("Starting the thread")
             thread.start()
             self.thread_list.append(thread)
 
         return
+
+class ViewClient(ViewConnection):
+
+    server: socket.socket
+
+    def __init__ (self, port: int | None = None) -> None:
+
+        if ViewClient.port is None:
+            # if port is None then this is the first instance of this class
+            # therefore we are setting the port and server
+            super().__init__(port = port)
+            ViewClient.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+        return
+
+    def connect (self) -> bool:
+
+        try:
+            self.server.connect((socket.gethostname(), self.port))
+        except:
+            print("Couldn't connect to server...\nExiting...")
+        else:
+            print("Connected to the server")
+            return True
+
+        return False
 
 # client, adder = server.accept()
