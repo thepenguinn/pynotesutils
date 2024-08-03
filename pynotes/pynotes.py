@@ -25,7 +25,9 @@ class ViewServer(ViewConnection):
     server: socket.socket
 
     thread_list: List[threading.Thread] = []
-    view_lock: threading.Lock
+    # command_lock will make sure that at a time only one
+    # thread will be executing the command
+    command_lock: threading.Lock
 
     def __init__ (self, port: int | None = None, command: str | None = None, backlog: int = 4) -> None:
 
@@ -35,6 +37,7 @@ class ViewServer(ViewConnection):
             super().__init__(port = port, backlog = backlog)
             ViewServer.command = command or "termux-share"
             ViewServer.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            ViewServer.command_lock = threading.Lock()
 
             self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.server.bind((socket.gethostname(), self.port))
@@ -44,8 +47,27 @@ class ViewServer(ViewConnection):
 
     def thread_handler (self, client: socket.socket) -> None:
 
-        print(client)
-        print("Leaving")
+        buf: bytearray
+        size: int
+
+        while True:
+
+            buf = client.recv(4)
+            if len(buf) < 4 and client.recv(1).decode() == "":
+                print("Client got disconnected")
+                print("Leaving the thread")
+                break
+
+            size = buf[0] | buf[1] << 8 | buf[2] << 16 | buf[3] << 24
+
+            buf = client.recv(size)
+
+            if len(buf) < size and client.recv(1).decode() == "":
+                print("Client got disconnected")
+                print("Leaving the thread")
+                break
+
+            print(buf.decode())
 
         return
 
@@ -93,5 +115,20 @@ class ViewClient(ViewConnection):
             return True
 
         return False
+
+    def view (self, file: str, command: str | None = None) -> None:
+
+        size: int
+        buf: bytearray
+
+        size = len(file)
+
+        buf = bytearray([
+            size & 0xff, (size >> 8) & 0xff, (size >> 16) & 0xff, (size >> 24) & 0xff
+        ]) + file.encode()
+
+        self.server.send(buf)
+
+        return
 
 # client, adder = server.accept()
