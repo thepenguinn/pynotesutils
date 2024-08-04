@@ -1,6 +1,8 @@
 import threading
+import pathlib
 import socket
 import os
+import re
 
 from typing import List
 
@@ -48,26 +50,56 @@ class ViewServer(ViewConnection):
     def thread_handler (self, client: socket.socket) -> None:
 
         buf: bytearray
+        msg: bytearray
         size: int
 
         while True:
 
             buf = client.recv(4)
-            if len(buf) < 4 and client.recv(1).decode() == "":
+            # TODO: use a loop
+            if len(buf) < 4 :
                 print("Client got disconnected")
                 print("Leaving the thread")
                 break
 
             size = buf[0] | buf[1] << 8 | buf[2] << 16 | buf[3] << 24
+            left_to_recv = size
 
-            buf = client.recv(size)
+            msg = bytearray([])
 
-            if len(buf) < size and client.recv(1).decode() == "":
+            while left_to_recv > 0:
+
+                buf = client.recv(left_to_recv)
+                if buf == bytearray([]):
+                    break
+                else:
+                    msg = msg + buf
+                    left_to_recv -= len(buf)
+
+            if len(msg) != size:
                 print("Client got disconnected")
                 print("Leaving the thread")
                 break
 
-            print(buf.decode())
+            # the payload should be the relative path from the home dirctory
+            # or an absolute path
+            file: str = msg.decode()
+
+            if file[0] != "/":
+                # relative path from home
+                file = os.environ["HOME"] + "/" + file
+
+            dir: str = re.sub("[^/]*$", "", file)
+
+            if dir != "" and pathlib.Path(dir).is_dir():
+                if pathlib.Path(file).is_file():
+                    os.chdir(dir)
+                    print("Opening: \"" + file + "\"")
+                    os.system(self.command + " \"" + file + "\"")
+                else:
+                    print("File does not exists: \"" + file + "\"")
+            else:
+                print("Directory does not exists: \"" + dir + "\"")
 
         return
 
@@ -79,12 +111,9 @@ class ViewServer(ViewConnection):
         # TODO: Limit the number of threads, maybe to 20
         while True:
             # this will block
-            print("Waiting for the client to connect")
             connected_client, _ = self.server.accept()
-            print("client got connected")
 
             thread = threading.Thread(target = self.thread_handler, args = [connected_client])
-            print("Starting the thread")
             thread.start()
             self.thread_list.append(thread)
 
@@ -120,6 +149,17 @@ class ViewClient(ViewConnection):
 
         size: int
         buf: bytearray
+        path: pathlib.PosixPath
+
+        path = pathlib.Path(file)
+
+        if not path.is_file():
+            raise Execption("File does not exists")
+            return
+        else:
+            path = path.resolve()
+
+        file = re.sub("^" + os.environ["HOME"] + "/", "", str(path))
 
         size = len(file)
 
