@@ -164,18 +164,15 @@ class ViewServer(Server, ViewConnection):
 
         return True
 
+class Client():
 
-class ViewClient(ViewConnection):
+    server: socket.socket | None = None
 
-    server: socket.socket
+    def __init__ (self) -> None:
 
-    def __init__ (self, port: int | None = None) -> None:
-
-        if ViewClient.port is None:
-            # if port is None then this is the first instance of this class
-            # therefore we are setting the port and server
-            super().__init__(port = port)
-            ViewClient.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.__class__.server = socket.socket(
+            socket.AF_INET, socket.SOCK_STREAM
+        )
 
         return
 
@@ -191,10 +188,33 @@ class ViewClient(ViewConnection):
 
         return False
 
-    def view (self, file: str, command: str | None = None) -> None:
+    def send (self, payload: str) -> None:
 
         size: int
         buf: bytearray
+
+        size = len(file)
+
+        buf = bytearray([
+            size & 0xff, (size >> 8) & 0xff, (size >> 16) & 0xff, (size >> 24) & 0xff
+        ]) + payload.encode()
+
+        self.server.send(buf)
+
+        return
+
+class ViewClient(ViewConnection):
+
+    def __init__ (self, port: int | None = None) -> None:
+
+        if self.server is None:
+            ViewConnection.__init__(self, port = port)
+            Client.__init__(self)
+
+        return
+
+    def view (self, file: str) -> None:
+
         path: pathlib.PosixPath
 
         path = pathlib.Path(file)
@@ -207,14 +227,6 @@ class ViewClient(ViewConnection):
 
         file = re.sub("^" + os.environ["HOME"] + "/", "", str(path))
 
-        size = len(file)
-
-        buf = bytearray([
-            size & 0xff, (size >> 8) & 0xff, (size >> 16) & 0xff, (size >> 24) & 0xff
-        ]) + file.encode()
-
-        self.server.send(buf)
+        self.send(file)
 
         return
-
-# client, adder = server.accept()
