@@ -6,57 +6,68 @@ import re
 
 from typing import List
 
-class ViewConnection():
+class Connection():
 
     port: int | None = None
-    backlog: int = 4
+    backlog: int
+
+    def __init__ (self, port: int , backlog: int) -> None:
+
+        self.__class__.port = port
+        self.__class__.backlog = backlog
+
+        return
+
+class ViewConnection(Connection):
 
     def __init__ (self, port: int | None = None, backlog: int = 4) -> None:
 
-        if ViewConnection.port is None:
-            # if port is None, then this is the first instance of this class
-            # therefore we are setting the port and backlog
-            ViewConnection.port = port or 52886
-            ViewConnection.backlog = backlog
+        if self.__class__.port is None:
+            super().__init__(port or 53881, backlog)
 
         return
 
-class ViewServer(ViewConnection):
+class Server():
 
-    command: str | None = None
-    server: socket.socket
+    # the subclasses should be a subclass of Connection
+    # and should set these values
+    # port: int | None
+    # backlog: int
+
+    server: socket.socket | None = None
 
     thread_list: List[threading.Thread] = []
-    # command_lock will make sure that at a time only one
-    # thread will be executing the command
-    command_lock: threading.Lock
 
-    def __init__ (self, port: int | None = None, command: str | None = None, backlog: int = 4) -> None:
+    def __init__ (self) -> None:
 
-        if ViewServer.command is None:
-            # if command is None then this is the first instance of this class
-            # therefore we are setting the port, command and starting the server
-            super().__init__(port = port, backlog = backlog)
-            ViewServer.command = command or "termux-share"
-            ViewServer.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            ViewServer.command_lock = threading.Lock()
+        server: socket.socket
 
-            self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self.server.bind((socket.gethostname(), self.port))
-            self.server.listen(self.backlog)
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind((socket.gethostname(), self.port))
+        server.listen(self.backlog)
+
+        self.__class__.server = server
 
         return
+
+    # Subclasses should implement this method
+    def payload_handler(self, client: socket.socket, payload: bytearray) -> bool:
+
+        return False
 
     def thread_handler (self, client: socket.socket) -> None:
 
         buf: bytearray
         msg: bytearray
         size: int
+        left_to_recv: int
 
         while True:
 
             buf = client.recv(4)
-            # TODO: use a loop
+            # TODO: use a loop for each byte
             if len(buf) < 4 :
                 print("Client got disconnected")
                 print("Leaving the thread")
@@ -81,27 +92,11 @@ class ViewServer(ViewConnection):
                 print("Leaving the thread")
                 break
 
-            # the payload should be the relative path from the home dirctory
-            # or an absolute path
-            file: str = msg.decode()
+            # call the payload_handler from here
 
-            if file[0] != "/":
-                # relative path from home
-                file = os.environ["HOME"] + "/" + file
-
-            dir: str = re.sub("[^/]*$", "", file)
-
-            if dir != "" and pathlib.Path(dir).is_dir():
-                if pathlib.Path(file).is_file():
-                    os.chdir(dir)
-                    print("Opening: \"" + file + "\"")
-                    os.system(self.command + " \"" + file + "\"")
-                else:
-                    print("File does not exists: \"" + file + "\"")
-            else:
-                print("Directory does not exists: \"" + dir + "\"")
-
-        return
+            if not self.payload_handler(client, msg):
+                print("payload_handeler returned False, stopping the thread")
+                break
 
     def start (self) -> None:
 
@@ -113,11 +108,62 @@ class ViewServer(ViewConnection):
             # this will block
             connected_client, _ = self.server.accept()
 
-            thread = threading.Thread(target = self.thread_handler, args = [connected_client])
+            thread = threading.Thread(
+                target = self.thread_handler, args = [connected_client]
+            )
             thread.start()
             self.thread_list.append(thread)
 
         return
+
+class ViewServer(Server, ViewConnection):
+
+    command: str | None = None
+
+    def __init__ (
+        self,
+        port: int | None = None,
+        command: str | None = None,
+        backlog: int = 4
+    ) -> None:
+
+        if self.__class__.server is None:
+
+            ViewConnection.__init__(self, port = port, backlog = backlog)
+            Server.__init__(self)
+
+            self.__class__.command = command or "termux-share"
+
+        return
+
+    def payload_handler (
+        self,
+        client: socket.socket,
+        payload: bytearray
+    ) -> bool:
+
+        # the payload should be the relative path from the home dirctory
+        # or an absolute path
+        file: str = payload.decode()
+
+        if file[0] != "/":
+            # relative path from home
+            file = os.environ["HOME"] + "/" + file
+
+        dir: str = re.sub("[^/]*$", "", file)
+
+        if dir != "" and pathlib.Path(dir).is_dir():
+            if pathlib.Path(file).is_file():
+                os.chdir(dir)
+                print("Opening: \"" + file + "\"")
+                os.system(self.command + " \"" + file + "\"")
+            else:
+                print("File does not exists: \"" + file + "\"")
+        else:
+            print("Directory does not exists: \"" + dir + "\"")
+
+        return True
+
 
 class ViewClient(ViewConnection):
 
