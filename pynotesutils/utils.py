@@ -1,8 +1,10 @@
+import contextlib
 import threading
 import pathlib
 import socket
 import os
 import re
+import io
 
 from typing import List
 
@@ -278,6 +280,10 @@ class ExecServer(Server, ExecConnection):
         # or an absolute path
         file: str = payload.decode()
 
+        output_file_name: str
+        output_file: io.TextIOWrapper
+        script_file: io.TextIOWrapper
+
         if file[0] != "/":
             # relative path from home
             file = os.environ["HOME"] + "/" + file
@@ -287,10 +293,62 @@ class ExecServer(Server, ExecConnection):
         if dir != "" and pathlib.Path(dir).is_dir():
             if pathlib.Path(file).is_file():
                 os.chdir(dir)
-                # TODO: exec the file and read its output and send back
+
+                output_file_name = re.sub(r"\.py$", ".output", file)
+
+                print("Exec 'ing " + file)
+
+                with open(output_file_name, "w") as output_file:
+                    with contextlib.redirect_stdout(output_file):
+                        with open(file) as script_file:
+                            exec(script_file.read())
+
+                print("Done exec 'ing")
+
+                output_file_name = re.sub(
+                    "^" + os.environ["HOME"] + "/", "", output_file_name
+                )
+
+                self.send(payload = output_file_name.encode(), receiver = client)
+
             else:
                 print("File does not exists: \"" + file + "\"")
         else:
             print("Directory does not exists: \"" + dir + "\"")
 
         return True
+
+class ExecClient(Client, ExecConnection):
+
+    def __init__ (self, port: int | None = None) -> None:
+
+        if self.server is None:
+            ExecConnection.__init__(self, port = port)
+            Client.__init__(self)
+
+        return
+
+    def exec (self, file: str) -> str:
+
+        stdout: str = ""
+        output_file_name: str
+        path: pathlib.PosixPath
+
+        path = pathlib.Path(file)
+
+        if not path.is_file():
+            raise Execption("File does not exists")
+            return
+        else:
+            path = path.resolve()
+
+        file = re.sub("^" + os.environ["HOME"] + "/", "", str(path))
+
+        self.send(payload = file.encode(), receiver = self.server)
+
+        output_file_name = self.recv(sender = self.server)
+
+        with open(os.environ["HOME"] + "/" + output_file_name.decode()) as f:
+            stdout = f.read()
+
+        return stdout
