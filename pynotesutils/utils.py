@@ -230,3 +230,56 @@ class ViewClient(ViewConnection):
         self.send(file)
 
         return
+
+class ExecConnection(Connection):
+
+    def __init__ (self, port: int | None = None, backlog: int = 4) -> None:
+
+        if self.__class__.port is None:
+            super().__init__(port or 46821, backlog)
+
+        return
+
+class ExecServer(Server, ExecConnection):
+
+    def __init__ (
+        self,
+        port: int | None = None,
+        backlog: int = 4
+    ) -> None:
+
+        if self.__class__.server is None:
+
+            ExecConnection.__init__(self, port = port, backlog = backlog)
+            Server.__init__(self)
+
+        return
+
+    # the client will send the file name, the server will exec the file
+    # then send the stdout back to the client through the same socket
+    def payload_handler (
+        self,
+        client: socket.socket,
+        payload: bytearray
+    ) -> bool:
+
+        # the payload should be the relative path from the home dirctory
+        # or an absolute path
+        file: str = payload.decode()
+
+        if file[0] != "/":
+            # relative path from home
+            file = os.environ["HOME"] + "/" + file
+
+        dir: str = re.sub("[^/]*$", "", file)
+
+        if dir != "" and pathlib.Path(dir).is_dir():
+            if pathlib.Path(file).is_file():
+                os.chdir(dir)
+                # TODO: exec the file and read its output and send back
+            else:
+                print("File does not exists: \"" + file + "\"")
+        else:
+            print("Directory does not exists: \"" + dir + "\"")
+
+        return True
