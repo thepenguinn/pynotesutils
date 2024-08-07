@@ -18,6 +18,56 @@ class Connection():
 
         return
 
+    def recv (self, sender: socket.socket) -> bytearray:
+
+        buf: bytearray
+        payload: bytearray
+        size: int
+        left_to_recv: int
+
+        buf = sender.recv(4)
+        # TODO: use a loop for each byte
+        if len(buf) < 4 :
+            raise Exception(
+                "Got disconnected from the server, while recv 'ing size"
+            )
+
+        size = buf[0] | buf[1] << 8 | buf[2] << 16 | buf[3] << 24
+        left_to_recv = size
+
+        payload = bytearray([])
+
+        while left_to_recv > 0:
+
+            buf = sender.recv(left_to_recv)
+            if buf == bytearray([]):
+                break
+            else:
+                payload = payload + buf
+                left_to_recv -= len(buf)
+
+        if len(payload) != size:
+            raise Exception(
+                "Got disconnected from the server, while recv 'ing payload"
+            )
+
+        return payload
+
+    def send (self, payload: bytearray, receiver: socket.socket) -> None:
+
+        size: int
+        buf: bytearray
+
+        size = len(payload)
+
+        buf = bytearray([
+            size & 0xff, (size >> 8) & 0xff, (size >> 16) & 0xff, (size >> 24) & 0xff
+        ]) + payload
+
+        receiver.send(buf)
+
+        return
+
 class ViewConnection(Connection):
 
     def __init__ (self, port: int | None = None, backlog: int = 4) -> None:
@@ -59,44 +109,20 @@ class Server():
 
     def thread_handler (self, client: socket.socket) -> None:
 
-        buf: bytearray
-        msg: bytearray
-        size: int
-        left_to_recv: int
+        payload: bytearray
 
         while True:
 
-            buf = client.recv(4)
-            # TODO: use a loop for each byte
-            if len(buf) < 4 :
-                print("Client got disconnected")
-                print("Leaving the thread")
+            try:
+                payload = self.recv(sender = client)
+            except:
                 break
-
-            size = buf[0] | buf[1] << 8 | buf[2] << 16 | buf[3] << 24
-            left_to_recv = size
-
-            msg = bytearray([])
-
-            while left_to_recv > 0:
-
-                buf = client.recv(left_to_recv)
-                if buf == bytearray([]):
+            else:
+                if not self.payload_handler(client, payload):
+                    print("payload_handler returned False, stopping the thread")
                     break
-                else:
-                    msg = msg + buf
-                    left_to_recv -= len(buf)
 
-            if len(msg) != size:
-                print("Client got disconnected")
-                print("Leaving the thread")
-                break
-
-            # call the payload_handler from here
-
-            if not self.payload_handler(client, msg):
-                print("payload_handeler returned False, stopping the thread")
-                break
+        return
 
     def start (self) -> None:
 
@@ -188,22 +214,7 @@ class Client():
 
         return False
 
-    def send (self, payload: str) -> None:
-
-        size: int
-        buf: bytearray
-
-        size = len(file)
-
-        buf = bytearray([
-            size & 0xff, (size >> 8) & 0xff, (size >> 16) & 0xff, (size >> 24) & 0xff
-        ]) + payload.encode()
-
-        self.server.send(buf)
-
-        return
-
-class ViewClient(ViewConnection):
+class ViewClient(Client, ViewConnection):
 
     def __init__ (self, port: int | None = None) -> None:
 
@@ -227,7 +238,7 @@ class ViewClient(ViewConnection):
 
         file = re.sub("^" + os.environ["HOME"] + "/", "", str(path))
 
-        self.send(file)
+        self.send(payload = file.encode(), receiver = self.server)
 
         return
 
