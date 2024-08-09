@@ -2,11 +2,12 @@ import contextlib
 import threading
 import pathlib
 import socket
+import json
 import os
 import re
 import io
 
-from typing import List
+from typing import List, Dict
 
 class Connection():
 
@@ -211,7 +212,6 @@ class Client():
         except:
             print("Couldn't connect to server...\nExiting...")
         else:
-            print("Connected to the server")
             return True
 
         return False
@@ -275,14 +275,26 @@ class ExecServer(Server, ExecConnection):
         client: socket.socket,
         payload: bytearray
     ) -> bool:
+        """
+        The result of the exec will be a serialized dictionary
+        {
+            stdout_file_name: path to the file,
+            exec_status: whether the exec succeded or not,
+        }
+        """
 
         # the payload should be the relative path from the home dirctory
         # or an absolute path
         file: str = payload.decode()
 
-        output_file_name: str
-        output_file: io.TextIOWrapper
+        stdout_file_name: str
+        stdout_file: io.TextIOWrapper
         script_file: io.TextIOWrapper
+
+        payload: Dict[str, str] = {
+            "stdout_file_name": "",
+            "exec_status": "FAILED",
+        }
 
         if file[0] != "/":
             # relative path from home
@@ -294,27 +306,35 @@ class ExecServer(Server, ExecConnection):
             if pathlib.Path(file).is_file():
                 os.chdir(dir)
 
-                output_file_name = re.sub(r"\.py$", ".output", file)
+                stdout_file_name = re.sub(r"\.py$", ".stdout", file)
 
                 print("Exec 'ing " + file)
 
-                with open(output_file_name, "w") as output_file:
-                    with contextlib.redirect_stdout(output_file):
-                        with open(file) as script_file:
-                            exec(script_file.read())
-
-                print("Done exec 'ing")
-
-                output_file_name = re.sub(
-                    "^" + os.environ["HOME"] + "/", "", output_file_name
-                )
-
-                self.send(payload = output_file_name.encode(), receiver = client)
+                try:
+                    with open(stdout_file_name, "w") as stdout_file:
+                        with contextlib.redirect_stdout(stdout_file):
+                            with open(file) as script_file:
+                                exec(script_file.read())
+                except:
+                    print("Exec failed")
+                else:
+                    print("Done exec 'ing")
+                    payload["exec_status"] = "SUCCESS"
+                    payload["stdout_file_name"] = re.sub(
+                        "^" + os.environ["HOME"] + "/", "", stdout_file_name
+                    )
 
             else:
                 print("File does not exists: \"" + file + "\"")
         else:
             print("Directory does not exists: \"" + dir + "\"")
+
+        self.send(
+            payload = json.dumps(payload).encode(),
+            receiver = client
+        )
+
+        # send the payload from here
 
         return True
 
@@ -330,9 +350,10 @@ class ExecClient(Client, ExecConnection):
 
     def exec (self, file: str) -> str:
 
-        stdout: str = ""
-        output_file_name: str
         path: pathlib.PosixPath
+        stdout_file: io.TextIOWrapper
+        payload: Dict[str, str]
+        stdout: str
 
         path = pathlib.Path(file)
 
@@ -346,9 +367,12 @@ class ExecClient(Client, ExecConnection):
 
         self.send(payload = file.encode(), receiver = self.server)
 
-        output_file_name = self.recv(sender = self.server)
+        payload = json.loads(self.recv(sender = self.server).decode())
 
-        with open(os.environ["HOME"] + "/" + output_file_name.decode()) as f:
-            stdout = f.read()
+        if payload["exec_status"] == "FAILED":
+            raise Execption("Exec Failed")
+
+        with open(os.environ["HOME"] + "/" + payload["stdout_file_name"]) as stdout_file:
+            stdout = stdout_file.read()
 
         return stdout
