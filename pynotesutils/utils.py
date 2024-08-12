@@ -296,6 +296,8 @@ class ExecServer(Server, ExecConnection):
             "exec_status": "FAILED",
         }
 
+        stdout: io.StringIO = io.StringIO()
+
         if file[0] != "/":
             # relative path from home
             file = os.environ["HOME"] + "/" + file
@@ -311,18 +313,20 @@ class ExecServer(Server, ExecConnection):
                 print("Exec 'ing " + file)
 
                 try:
-                    with open(stdout_file_name, "w") as stdout_file:
-                        with contextlib.redirect_stdout(stdout_file):
-                            with open(file) as script_file:
-                                exec(script_file.read())
+                    with contextlib.redirect_stdout(stdout):
+                        with open(file) as script_file:
+                            exec(script_file.read())
                 except:
                     print("Exec failed")
                 else:
                     print("Done exec 'ing")
                     payload["exec_status"] = "SUCCESS"
-                    payload["stdout_file_name"] = re.sub(
-                        "^" + os.environ["HOME"] + "/", "", stdout_file_name
-                    )
+                    if stdout.getvalue() != "":
+                        with open(stdout_file_name, "w") as stdout_file:
+                            stdout_file.write(stdout.getvalue())
+                        payload["stdout_file_name"] = re.sub(
+                            "^" + os.environ["HOME"] + "/", "", stdout_file_name
+                        )
 
             else:
                 print("File does not exists: \"" + file + "\"")
@@ -372,7 +376,9 @@ class ExecClient(Client, ExecConnection):
         if payload["exec_status"] == "FAILED":
             raise Execption("Exec Failed")
 
-        with open(os.environ["HOME"] + "/" + payload["stdout_file_name"]) as stdout_file:
-            stdout = stdout_file.read()
+        if payload["stdout_file_name"] != "":
+
+            with open(os.environ["HOME"] + "/" + payload["stdout_file_name"]) as stdout_file:
+                stdout = stdout_file.read()
 
         return stdout
