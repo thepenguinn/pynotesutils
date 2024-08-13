@@ -327,6 +327,12 @@ class ExecServer(Server, ExecConnection):
                         payload["stdout_file_name"] = re.sub(
                             "^" + os.environ["HOME"] + "/", "", stdout_file_name
                         )
+                    else:
+                        try:
+                            os.remove(stdout_file_name)
+                        except:
+                            pass
+
 
             else:
                 print("File does not exists: \"" + file + "\"")
