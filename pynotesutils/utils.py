@@ -233,7 +233,7 @@ class ViewClient(Client, ViewConnection):
         path = pathlib.Path(file)
 
         if not path.is_file():
-            raise Execption("File does not exists")
+            raise Exception("File does not exists")
             return
         else:
             path = path.resolve()
@@ -255,6 +255,8 @@ class ExecConnection(Connection):
 
 class ExecServer(Server, ExecConnection):
 
+    view_client: ViewClient
+
     def __init__ (
         self,
         port: int | None = None,
@@ -263,8 +265,27 @@ class ExecServer(Server, ExecConnection):
 
         if self.__class__.server is None:
 
+            import matplotlib.figure
+
+            self.__class__.view_client = ViewClient()
+            if self.view_client.connect():
+                print("connected")
+            else:
+                print("not connected")
+
+            ExecServer._savefig = matplotlib.figure.Figure.savefig
+            matplotlib.figure.Figure.savefig = ExecServer.savefig_shadow
+
             ExecConnection.__init__(self, port = port, backlog = backlog)
             Server.__init__(self)
+
+        return
+
+    def savefig_shadow (self, fname, *args, **kwargs) -> None:
+
+        ExecServer._savefig(self, fname, *args, **kwargs)
+
+        ExecServer.view_client.view(fname)
 
         return
 
