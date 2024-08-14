@@ -266,6 +266,11 @@ class ExecServer(Server, ExecConnection):
         if self.__class__.server is None:
 
             import matplotlib.figure
+            import matplotlib.pyplot
+
+            figure = matplotlib.pyplot.gcf()
+
+            ExecServer._initial_figsize = figure.get_size_inches()
 
             self.__class__.view_client = ViewClient()
             if self.view_client.connect():
@@ -286,6 +291,13 @@ class ExecServer(Server, ExecConnection):
         ExecServer._savefig(self, fname, *args, **kwargs)
 
         ExecServer.view_client.view(fname)
+
+        # TODO: make this better
+        # this will clears and restores the default size of the
+        # figure
+
+        self.set_size_inches(*ExecServer._initial_figsize)
+        self.clf()
 
         return
 
