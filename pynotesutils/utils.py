@@ -397,6 +397,7 @@ class ExecClient(Client, ExecConnection):
         stdout_file: io.TextIOWrapper
         payload: Dict[str, str]
         stdout: str
+        stdout_file_name: str
 
         path = pathlib.Path(file)
 
@@ -417,7 +418,12 @@ class ExecClient(Client, ExecConnection):
 
         if payload["stdout_file_name"] != "":
 
-            with open(os.environ["HOME"] + "/" + payload["stdout_file_name"]) as stdout_file:
+            if payload["stdout_file_name"][0] == "/":
+                stdout_file_name = payload["stdout_file_name"]
+            else:
+                stdout_file_name = os.environ["HOME"] + "/" + payload["stdout_file_name"]
+
+            with open(stdout_file_name) as stdout_file:
                 stdout = stdout_file.read()
 
         return stdout
