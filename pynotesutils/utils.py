@@ -58,6 +58,7 @@ class Connection():
 
     def send (self, payload: bytearray, receiver: socket.socket) -> None:
 
+        # TODO: make sure the payload size is less than 2^32 - 1
         size: int
         buf: bytearray
 
@@ -313,6 +314,7 @@ class ExecServer(Server, ExecConnection):
         {
             stdout_file_name: path to the file,
             exec_status: whether the exec succeded or not,
+            exception:
         }
         """
 
@@ -327,6 +329,7 @@ class ExecServer(Server, ExecConnection):
         payload: Dict[str, str] = {
             "stdout_file_name": "",
             "exec_status": "FAILED",
+            "exception": [],
         }
 
         stdout: io.StringIO = io.StringIO()
@@ -349,8 +352,11 @@ class ExecServer(Server, ExecConnection):
                     with contextlib.redirect_stdout(stdout):
                         with open(file) as script_file:
                             exec(script_file.read())
-                except:
+                except Exception as e:
                     print("Exec failed")
+                    payload["exception"] = e.args
+                    ## for arg in e.args:
+                    ##     payload["exception"] = payload["exception"] + arg + "\n"
                 else:
                     print("Done exec 'ing")
                     payload["exec_status"] = "SUCCESS"
@@ -402,7 +408,7 @@ class ExecClient(Client, ExecConnection):
         path = pathlib.Path(file)
 
         if not path.is_file():
-            raise Execption("File does not exists")
+            raise Exception("File does not exists")
             return
         else:
             path = path.resolve()
@@ -414,7 +420,7 @@ class ExecClient(Client, ExecConnection):
         payload = json.loads(self.recv(sender = self.server).decode())
 
         if payload["exec_status"] == "FAILED":
-            raise Execption("Exec Failed")
+            raise Exception(payload["exception"])
 
         if payload["stdout_file_name"] != "":
 
