@@ -266,28 +266,31 @@ class ExecServer(Server, ExecConnection):
 
         if self.__class__.server is None:
 
+            print("Importing matplotlib...")
             import matplotlib.figure
             import matplotlib.pyplot
 
+            print("Shadowing matplotlib functions...")
             figure = matplotlib.pyplot.gcf()
 
             ExecServer._initial_figsize = figure.get_size_inches()
 
+            ExecServer._savefig = matplotlib.figure.Figure.savefig
+            matplotlib.figure.Figure.savefig = ExecServer._savefig_shadow
+
+            print("Trying to connect to ViewServer")
             self.__class__.view_client = ViewClient()
             if self.view_client.connect():
-                print("connected")
+                print("Connected to ViewServer")
             else:
-                print("not connected")
-
-            ExecServer._savefig = matplotlib.figure.Figure.savefig
-            matplotlib.figure.Figure.savefig = ExecServer.savefig_shadow
+                print("Failed to connect to ViewServer")
 
             ExecConnection.__init__(self, port = port, backlog = backlog)
             Server.__init__(self)
 
         return
 
-    def savefig_shadow (self, fname, *args, **kwargs) -> None:
+    def _savefig_shadow (self, fname: str, *args, **kwargs) -> None:
 
         ExecServer._savefig(self, fname, *args, **kwargs)
 
