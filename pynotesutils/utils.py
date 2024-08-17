@@ -1,4 +1,5 @@
 import contextlib
+import traceback
 import threading
 import pathlib
 import socket
@@ -357,9 +358,7 @@ class ExecServer(Server, ExecConnection):
                             exec(script_file.read())
                 except Exception as e:
                     print("Exec failed")
-                    payload["exception"] = e.args
-                    ## for arg in e.args:
-                    ##     payload["exception"] = payload["exception"] + arg + "\n"
+                    payload["exception"] = traceback.format_exc()
                 else:
                     print("Done exec 'ing")
                     payload["exec_status"] = "SUCCESS"
@@ -405,7 +404,7 @@ class ExecClient(Client, ExecConnection):
         path: pathlib.PosixPath
         stdout_file: io.TextIOWrapper
         payload: Dict[str, str]
-        stdout: str
+        stdout: str = ""
         stdout_file_name: str
 
         path = pathlib.Path(file)
