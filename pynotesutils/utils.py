@@ -355,7 +355,7 @@ class ExecServer(Server, ExecConnection):
                 try:
                     with contextlib.redirect_stdout(stdout):
                         with open(file) as script_file:
-                            exec(script_file.read())
+                            exec(script_file.read(), globals())
                 except Exception as e:
                     print("Exec failed")
                     payload["exception"] = traceback.format_exc()
